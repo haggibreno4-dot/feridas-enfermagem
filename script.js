@@ -23,7 +23,49 @@ function optsAnswer(values,selected){return values.map(v=>'<option value="'+esc(
 function answerKey(c){return '<div class="answer-key"><div class="answer-title"><span class="answer-check">✓</span><div><h3>Gabarito comentado</h3><p>Achados esperados para este cenário de estudo.</p></div></div><div class="answer-grid"><div><small>Dimensões</small><strong>'+esc(c.size)+'</strong></div><div><small>Profundidade</small><strong>'+esc(c.depth)+'</strong></div><div><small>Tecido no leito</small><strong>'+esc(c.answerTissue)+'</strong></div><div><small>Bordas</small><strong>'+esc(c.edges)+'</strong></div><div><small>Pele perilesional</small><strong>'+esc(c.periwound)+'</strong></div><div><small>Exsudato</small><strong>'+esc(c.exudateAnswer)+'</strong></div><div><small>Sinais de infecção / alerta</small><strong>'+esc(c.infection)+'</strong></div></div><div class="clinical-limit"><strong>Ponto de aprendizagem</strong><p>'+esc(c.clinicalNote)+'</p></div><p class="muted answer-disclaimer">Gabarito pedagógico fictício. Não use para diagnosticar ou definir tratamento de uma ferida real.</p></div>'}
 function simulatorView(){return studyView()}
 let authMode="login";
-function bindLogin(){const f=document.getElementById("loginForm");if(!f)return;const toggle=()=>{authMode=authMode==="login"?"register":"login";const registering=authMode==="register";document.getElementById("authTitle").textContent=registering?"Criar sua conta":"Entrar na plataforma";document.getElementById("authSubtitle").textContent=registering?"Cadastre-se para salvar seu acesso.":"Acesse sua conta para continuar os estudos.";document.getElementById("nameField").classList.toggle("hidden",!registering);document.getElementById("name").required=registering;document.getElementById("password").autocomplete=registering?"new-password":"current-password";document.getElementById("authSubmit").textContent=registering?"Criar conta":"Entrar";document.getElementById("authSwitch").innerHTML=registering?'Já tem uma conta? <button type="button" id="toggleAuth">Entrar</button>':'Ainda não tem conta? <button type="button" id="toggleAuth">Criar cadastro</button>';document.getElementById("toggleAuth").onclick=toggle;document.getElementById("loginError").textContent=""};document.getElementById("toggleAuth").onclick=toggle;f.addEventListener("submit",async e=>{e.preventDefault();const btn=document.getElementById("authSubmit"),err=document.getElementById("loginError");btn.disabled=true;btn.textContent="Aguarde...";err.textContent="";const payload={email:document.getElementById("email").value.trim(),password:document.getElementById("password").value};if(authMode==="register")payload.name=document.getElementById("name").value.trim();try{const res=await fetch("/api/auth/"+authMode,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const data=await res.json();if(!res.ok)throw new Error(data.error||"Não foi possível autenticar.");if(authMode==="register"){const registeredEmail=payload.email;document.getElementById("toggleAuth").click();document.getElementById("email").value=registeredEmail;document.getElementById("password").value="";err.style.color="var(--teal)";err.textContent=data.message||"Conta criada com sucesso. Entre com seu e-mail e senha para validar o acesso."}else{state.user=data.user;state.view="dashboard";render()}}catch(error){err.textContent=error.message==="Failed to fetch"?"Não foi possível conectar ao servidor. Tente novamente.":error.message}finally{btn.disabled=false;btn.textContent=authMode==="register"?"Criar conta":"Entrar"}})}
+function bindLogin(){
+ const form=document.getElementById("loginForm"); if(!form)return;
+ const toggle=()=>{
+  authMode=authMode==="login"?"register":"login";
+  const registering=authMode==="register";
+  document.getElementById("authTitle").textContent=registering?"Criar sua conta":"Entrar na plataforma";
+  document.getElementById("authSubtitle").textContent=registering?"Cadastre-se para salvar seu acesso.":"Acesse sua conta para continuar os estudos.";
+  document.getElementById("nameField").classList.toggle("hidden",!registering);
+  document.getElementById("name").required=registering;
+  document.getElementById("password").autocomplete=registering?"new-password":"current-password";
+  document.getElementById("authSubmit").textContent=registering?"Criar conta":"Entrar";
+  document.getElementById("authSwitch").innerHTML=registering?'Já tem uma conta? <button type="button" id="toggleAuth">Entrar</button>':'Ainda não tem conta? <button type="button" id="toggleAuth">Criar cadastro</button>';
+  document.getElementById("toggleAuth").onclick=toggle;
+  document.getElementById("loginError").textContent="";
+ };
+ document.getElementById("toggleAuth").onclick=toggle;
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();
+  const button=document.getElementById("authSubmit"), error=document.getElementById("loginError");
+  button.disabled=true; button.textContent="Aguarde..."; error.textContent="";
+  const payload={email:document.getElementById("email").value.trim(),password:document.getElementById("password").value};
+  if(authMode==="register")payload.name=document.getElementById("name").value.trim();
+  try {
+   const response=await fetch("/api/auth/"+authMode,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.error||"Não foi possível autenticar.");
+   if(authMode==="register"){
+    const registeredEmail=payload.email;
+    document.getElementById("toggleAuth").click();
+    document.getElementById("email").value=registeredEmail;
+    document.getElementById("password").value="";
+    error.style.color="var(--teal)";
+    error.textContent=data.message||"Conta criada com sucesso. Entre com seu e-mail e senha para validar o acesso.";
+   } else {
+    state.user=data.user; state.view="dashboard"; render();
+   }
+  } catch(err) {
+   error.textContent=err.message==="Failed to fetch"?"Não foi possível conectar ao servidor. Tente novamente.":err.message;
+  } finally {
+   button.disabled=false; button.textContent=authMode==="register"?"Criar conta":"Entrar";
+  }
+ });
+}
 function bindApp(){document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>go(b.dataset.view));document.getElementById("logout")?.addEventListener("click",async()=>{try{await fetch("/api/auth/logout",{method:"POST"})}catch(e){}state.user=null;render()});document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>simulate(Number(b.dataset.action)));const filters={filterEtiology:"etiology",filterTissue:"tissue",filterExudate:"exudate",filterDifficulty:"difficulty",filterSigns:"signs"};Object.entries(filters).forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.onchange=()=>{state.filters[key]=el.value;renderContentOnly()}});document.getElementById("clearFilters")?.addEventListener("click",()=>{state.filters={etiology:"Todas",tissue:"Todos",exudate:"Todos",difficulty:"Todos",signs:"Todos"};renderContentOnly()});document.querySelectorAll("[data-answer]").forEach(el=>el.addEventListener("input",()=>{const c=state.selectedCaseId;state.answers[c]=state.answers[c]||{};state.answers[c][el.dataset.answer]=el.value}));document.getElementById("saveAssessment")?.addEventListener("click",()=>{document.getElementById("saveAssessment").textContent="Respostas guardadas nesta sessão ✓";document.getElementById("saveAssessment").classList.add("saved")});document.getElementById("toggleAnswer")?.addEventListener("click",()=>{state.showAnswer=!state.showAnswer;renderContentOnly()});}
 function renderContentOnly(){const c=document.getElementById("content");if(c)c.innerHTML=state.view==="dashboard"?dashboardView():state.view==="cases"?casesView():studyView();bindApp()}
 function simulate(i){const c=state.cases.find(x=>x.id===state.selectedCaseId)||state.cases[0];const r=document.getElementById("simulationResult");if(!r)return;const feedback=[[ "Boa escolha para a etapa de avaliação.","Antes de escolher uma cobertura, caracterize a ferida e siga o protocolo institucional."],["Atenção: intervenções dependem de avaliação clínica.","A indicação e contraindicações precisam ser avaliadas pelo profissional e pelo protocolo."],["Boa linha de raciocínio.","A seleção de cobertura deve considerar leito, exsudato, objetivo terapêutico e protocolo."],["Correto como etapa de continuidade.","O registro e a reavaliação são fundamentais para acompanhar a resposta ao cuidado."]][i]||["Revise o caso.","Relacione a escolha aos achados clínicos."];r.className="simulation-result "+(i===1?"warning":"");r.innerHTML="<strong>"+esc(feedback[0])+"</strong><br><span>"+esc(feedback[1])+"</span>"}
