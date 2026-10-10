@@ -77,6 +77,11 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions(expires_at);
+    CREATE TABLE IF NOT EXISTS user_app_data (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   dbReady=true;
   console.log("Banco de autenticação inicializado.");
@@ -139,6 +144,21 @@ http.createServer(async (req,res)=>{
     if(pathname==="/api/health") return json(res,200,{ok:true,service:"feridas-enfermagem",database:dbReady?"connected":"not_configured"});
     if(pathname.startsWith("/api/auth/")) return await authRoute(req,res,pathname);
     if(pathname==="/api/cases") return json(res,200,{cases});
+    if(pathname==="/api/data" && (req.method==="GET" || req.method==="PUT")) {
+      if(!pool || !dbReady) return authUnavailable(res);
+      const user=await currentUser(req);
+      if(!user) return json(res,401,{error:"Faça login para sincronizar seu progresso."});
+      if(req.method==="GET") {
+        const saved=await pool.query("SELECT data,updated_at FROM user_app_data WHERE user_id=$1",[user.id]);
+        return json(res,200,{data:saved.rows[0]?.data||{},updatedAt:saved.rows[0]?.updated_at||null});
+      }
+      const body=await readBody(req);
+      if(!body.data || typeof body.data!=="object" || Array.isArray(body.data)) return json(res,400,{error:"Formato de dados inválido."});
+      const raw=JSON.stringify(body.data);
+      if(raw.length>30000) return json(res,413,{error:"O progresso excede o limite permitido."});
+      const result=await pool.query("INSERT INTO user_app_data(user_id,data,updated_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(user_id) DO UPDATE SET data=EXCLUDED.data,updated_at=NOW() RETURNING updated_at",[user.id,raw]);
+      return json(res,200,{ok:true,updatedAt:result.rows[0].updated_at});
+    }
     const requested=pathname==="/"?"index.html":decodeURIComponent(pathname).replace(/^\/+/, "");
     const file=path.resolve(root,requested);
     if(file!==root && !file.startsWith(root+path.sep)) return send(res,403,"text/plain; charset=utf-8","Forbidden");
