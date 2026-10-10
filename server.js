@@ -121,6 +121,12 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS audit_events_owner_time_idx ON audit_events(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS assessment_amendments (
+      id BIGSERIAL PRIMARY KEY, assessment_id BIGINT NOT NULL REFERENCES wound_assessments(id) ON DELETE CASCADE,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, reason TEXT NOT NULL, content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS assessment_amendments_assessment_idx ON assessment_amendments(assessment_id, created_at);
   `);
   dbReady=true;
   console.log("Banco de autenticação inicializado.");
