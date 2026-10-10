@@ -183,12 +183,82 @@ async function authRoute(req,res,pathname) {
   }
   return json(res,404,{error:"Rota de autenticação não encontrada."});
 }
+
+function cleanText(value,max=4000){return String(value==null?"":value).trim().slice(0,max)}
+function audit(userId,action,entityType,entityId){return pool.query("INSERT INTO audit_events(user_id,action,entity_type,entity_id) VALUES($1,$2,$3,$4)",[userId,action,entityType,entityId||null])}
+function pdfEscape(value){return String(value).normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x20-\x7E]/g," ").replace(/([\\()])/g,"\\$1").slice(0,180)}
+function makeClinicalPdf(lines){
+ const wrapped=[];for(const item of lines){let rest=String(item||"");if(!rest){wrapped.push("");continue}while(rest.length>92){let cut=rest.lastIndexOf(" ",92);if(cut<35)cut=92;wrapped.push(rest.slice(0,cut));rest=rest.slice(cut).trim()}wrapped.push(rest)}
+ const pages=[];for(let i=0;i<wrapped.length;i+=48)pages.push(wrapped.slice(i,i+48));if(!pages.length)pages.push(["Ficha de Avaliacao de Feridas"]);
+ const objects=[];const add=o=>{objects.push(o);return objects.length};const catalog=add("");const pagesObj=add("");const font=add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");const pageIds=[];
+ pages.forEach(lines=>{const stream=lines.map((line,i)=>"BT /F1 9 Tf 48 "+(795-i*15)+" Td ("+pdfEscape(line)+") Tj ET").join("\n");const content=add("<< /Length "+Buffer.byteLength(stream,"ascii")+" >>\nstream\n"+stream+"\nendstream");pageIds.push(add("<< /Type /Page /Parent "+pagesObj+" 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 "+font+" 0 R >> >> /Contents "+content+" 0 R >>"))});
+ objects[catalog-1]="<< /Type /Catalog /Pages "+pagesObj+" 0 R >>";objects[pagesObj-1]="<< /Type /Pages /Kids ["+pageIds.map(x=>x+" 0 R").join(" ")+"] /Count "+pageIds.length+" >>";
+ let out="%PDF-1.4\n%DermeQuest\n",offsets=[0];objects.forEach((obj,i)=>{offsets.push(Buffer.byteLength(out,"ascii"));out+=(i+1)+" 0 obj\n"+obj+"\nendobj\n"});const xref=Buffer.byteLength(out,"ascii");out+="xref\n0 "+(objects.length+1)+"\n0000000000 65535 f \n";offsets.slice(1).forEach(n=>out+=String(n).padStart(10,"0")+" 00000 n \n");out+="trailer\n<< /Size "+(objects.length+1)+" /Root "+catalog+" 0 R >>\nstartxref\n"+xref+"\n%%EOF";return Buffer.from(out,"ascii")
+}
+async function clinicalRoute(req,res,pathname){
+ if(!pathname.startsWith("/api/records/"))return false;
+ if(!pool||!dbReady){authUnavailable(res);return true}
+ const user=await currentUser(req);if(!user){json(res,401,{error:"Faça login para acessar prontuários."});return true}
+ const uid=user.id,method=req.method;
+ if(pathname==="/api/records/patients"&&method==="GET"){
+  const q=cleanText(new URL(req.url,"http://localhost").searchParams.get("q"),100);
+  const r=await pool.query("SELECT p.id,p.patient_code,p.display_name,p.created_at,p.updated_at,(SELECT COUNT(*) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS assessment_count,(SELECT MAX(a.assessed_at) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS last_assessment FROM patients p WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.patient_code ILIKE '%'||$2||'%') ORDER BY p.display_name LIMIT 250",[uid,q]);json(res,200,{patients:r.rows});return true
+ }
+ if(pathname==="/api/records/patients"&&method==="POST"){
+  const b=await readBody(req),code=cleanText(b.patientCode,64),name=cleanText(b.displayName,160);if(!code||!name){json(res,400,{error:"Informe um identificador interno e um nome ou rótulo para o paciente."});return true}
+  try{const r=await pool.query("INSERT INTO patients(user_id,patient_code,display_name,birth_date,sex,contact,clinical_context,comorbidities,allergies,observations) VALUES($1,$2,$3,NULLIF($4,'')::date,$5,$6,$7,$8,$9,$10) RETURNING *",[uid,code,name,cleanText(b.birthDate,10),cleanText(b.sex,40),cleanText(b.contact,200),cleanText(b.clinicalContext),cleanText(b.comorbidities),cleanText(b.allergies),cleanText(b.observations)]);await audit(uid,"patient.created","patient",r.rows[0].id);json(res,201,{patient:r.rows[0]});return true}catch(e){if(e.code==="23505"){json(res,409,{error:"Esse identificador já existe na sua lista."});return true}if(e.code==="22007"||e.code==="22008"){json(res,400,{error:"Data de nascimento inválida."});return true}throw e}
+ }
+ let m=pathname.match(/^\/api\/records\/patients\/(\d+)$/);
+ if(m&&method==="GET"){
+  const p=await pool.query("SELECT * FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+  const wounds=await pool.query("SELECT w.*,(SELECT COUNT(*) FROM wound_assessments a WHERE a.wound_id=w.id AND a.user_id=$2) AS assessment_count,(SELECT MAX(a.assessed_at) FROM wound_assessments a WHERE a.wound_id=w.id AND a.user_id=$2) AS last_assessment FROM wounds w WHERE w.patient_id=$1 AND w.user_id=$2 ORDER BY w.created_at DESC",[m[1],uid]);
+  const assessments=await pool.query("SELECT a.id,a.wound_id,a.assessed_at,a.status,a.evolution_draft,a.evolution_final,a.version,a.finalized_at,w.label AS wound_label FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 WHERE a.patient_id=$1 AND a.user_id=$2 ORDER BY a.assessed_at DESC LIMIT 100",[m[1],uid]);json(res,200,{patient:p.rows[0],wounds:wounds.rows,assessments:assessments.rows});return true
+ }
+ if(m&&method==="PATCH"){
+  const b=await readBody(req),code=cleanText(b.patientCode,64),name=cleanText(b.displayName,160);if(!code||!name){json(res,400,{error:"Identificador e nome são obrigatórios."});return true}
+  try{const r=await pool.query("UPDATE patients SET patient_code=$3,display_name=$4,birth_date=NULLIF($5,'')::date,sex=$6,contact=$7,clinical_context=$8,comorbidities=$9,allergies=$10,observations=$11,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *",[m[1],uid,code,name,cleanText(b.birthDate,10),cleanText(b.sex,40),cleanText(b.contact,200),cleanText(b.clinicalContext),cleanText(b.comorbidities),cleanText(b.allergies),cleanText(b.observations)]);if(!r.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}await audit(uid,"patient.updated","patient",m[1]);json(res,200,{patient:r.rows[0]});return true}catch(e){if(e.code==="23505"){json(res,409,{error:"Esse identificador já existe na sua lista."});return true}throw e}
+ }
+ m=pathname.match(/^\/api\/records\/patients\/(\d+)\/wounds$/);
+ if(m&&method==="POST"){
+  const b=await readBody(req),p=await pool.query("SELECT id FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+  const code=cleanText(b.woundCode,64),label=cleanText(b.label,160),location=cleanText(b.location,160);if(!code||!label||!location){json(res,400,{error:"Identificador, nome da ferida e localização são obrigatórios."});return true}
+  try{const r=await pool.query("INSERT INTO wounds(user_id,patient_id,wound_code,label,location,laterality,etiology,onset_date,classification,notes) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::date,$9,$10) RETURNING *",[uid,m[1],code,label,location,cleanText(b.laterality,40),cleanText(b.etiology,120),cleanText(b.onsetDate,10),cleanText(b.classification,120),cleanText(b.notes)]);await audit(uid,"wound.created","wound",r.rows[0].id);json(res,201,{wound:r.rows[0]});return true}catch(e){if(e.code==="23505"){json(res,409,{error:"Esse código de ferida já existe neste paciente."});return true}throw e}
+ }
+ m=pathname.match(/^\/api\/records\/wounds\/(\d+)\/assessments$/);
+ if(m&&method==="GET"){const w=await pool.query("SELECT id FROM wounds WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!w.rowCount){json(res,404,{error:"Ferida não encontrada."});return true}const r=await pool.query("SELECT * FROM wound_assessments WHERE wound_id=$1 AND user_id=$2 ORDER BY assessed_at DESC",[m[1],uid]);json(res,200,{assessments:r.rows});return true}
+ if(m&&method==="POST"){
+  const b=await readBody(req),w=await pool.query("SELECT id,patient_id FROM wounds WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!w.rowCount){json(res,404,{error:"Ferida não encontrada."});return true}
+  const payload=b.payload&&typeof b.payload==="object"&&!Array.isArray(b.payload)?b.payload:{};const raw=JSON.stringify(payload);if(raw.length>24000){json(res,413,{error:"A avaliação excede o limite permitido."});return true}
+  const r=await pool.query("INSERT INTO wound_assessments(user_id,patient_id,wound_id,assessed_at,status,payload,evolution_draft) VALUES($1,$2,$3,COALESCE(NULLIF($4,'')::timestamptz,NOW()),'draft',$5::jsonb,$6) RETURNING *",[uid,w.rows[0].patient_id,m[1],cleanText(b.assessedAt,35),raw,cleanText(b.evolutionDraft,12000)]);await audit(uid,"assessment.created","assessment",r.rows[0].id);json(res,201,{assessment:r.rows[0]});return true
+ }
+ m=pathname.match(/^\/api\/records\/assessments\/(\d+)$/);
+ if(m&&method==="PATCH"){
+  const b=await readBody(req),payload=b.payload&&typeof b.payload==="object"&&!Array.isArray(b.payload)?b.payload:{};const raw=JSON.stringify(payload);if(raw.length>24000){json(res,413,{error:"A avaliação excede o limite permitido."});return true}
+  const r=await pool.query("UPDATE wound_assessments SET payload=$3::jsonb,evolution_draft=$4,assessed_at=COALESCE(NULLIF($5,'')::timestamptz,assessed_at),version=version+1,updated_at=NOW() WHERE id=$1 AND user_id=$2 AND status='draft' RETURNING *",[m[1],uid,raw,cleanText(b.evolutionDraft,12000),cleanText(b.assessedAt,35)]);if(!r.rowCount){json(res,409,{error:"Rascunho não encontrado ou já finalizado. Registros finalizados não podem ser sobrescritos."});return true}await audit(uid,"assessment.draft_updated","assessment",m[1]);json(res,200,{assessment:r.rows[0]});return true
+ }
+ m=pathname.match(/^\/api\/records\/assessments\/(\d+)\/finalize$/);
+ if(m&&method==="POST"){const b=await readBody(req),txt=cleanText(b.evolutionFinal,12000);if(!txt){json(res,400,{error:"Revise e confirme a evolução antes de finalizar."});return true}const r=await pool.query("UPDATE wound_assessments SET status='final',evolution_final=$3,finalized_at=NOW(),updated_at=NOW(),version=version+1 WHERE id=$1 AND user_id=$2 AND status='draft' RETURNING *",[m[1],uid,txt]);if(!r.rowCount){json(res,409,{error:"Somente rascunhos podem ser finalizados."});return true}await audit(uid,"assessment.finalized","assessment",m[1]);json(res,200,{assessment:r.rows[0]});return true}
+ m=pathname.match(/^\/api\/records\/assessments\/(\d+)\/amendments$/);
+ if(m&&method==="POST"){const b=await readBody(req),reason=cleanText(b.reason,1000),content=cleanText(b.content,6000);if(!reason||!content){json(res,400,{error:"Informe o motivo e o conteúdo do adendo."});return true}const a=await pool.query("SELECT id FROM wound_assessments WHERE id=$1 AND user_id=$2 AND status='final'",[m[1],uid]);if(!a.rowCount){json(res,404,{error:"Avaliação finalizada não encontrada."});return true}const r=await pool.query("INSERT INTO assessment_amendments(assessment_id,user_id,reason,content) VALUES($1,$2,$3,$4) RETURNING *",[m[1],uid,reason,content]);await audit(uid,"assessment.amended","assessment",m[1]);json(res,201,{amendment:r.rows[0]});return true}
+ m=pathname.match(/^\/api\/records\/patients\/(\d+)\/export\.pdf$/);
+ if(m&&method==="GET"){
+  const p=await pool.query("SELECT * FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+  const wounds=await pool.query("SELECT * FROM wounds WHERE patient_id=$1 AND user_id=$2 ORDER BY created_at",[m[1],uid]);const as=await pool.query("SELECT a.*,w.label AS wound_label,w.location FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 WHERE a.patient_id=$1 AND a.user_id=$2 ORDER BY a.assessed_at",[m[1],uid]);
+  const lines=["DERMAQUEST | FICHA DE AVALIACAO DE FERIDAS","Exportacao autenticada | Dados registrados, sem inferencias clinicas","","Paciente: "+p.rows[0].display_name,"Identificador: "+p.rows[0].patient_code,"Cadastro: "+p.rows[0].created_at.toISOString().slice(0,10),"Contexto clinico: "+(p.rows[0].clinical_context||"Nao registrado"),"Comorbidades: "+(p.rows[0].comorbidities||"Nao registrado"),"Alergias: "+(p.rows[0].allergies||"Nao registrado"),"Observacoes: "+(p.rows[0].observations||"Nao registrado"),"","FERIDAS REGISTRADAS"];
+  wounds.rows.forEach(w=>lines.push("- "+w.wound_code+" | "+w.label+" | "+w.location+" | Etiologia: "+(w.etiology||"Nao registrada")));
+  for(let i=0;i<as.rows.length;i++){const a=as.rows[i];lines.push("","AVALIACAO "+(i+1)+" | "+new Date(a.assessed_at).toISOString()+" | "+a.wound_label+" | "+(a.status==="final"?"FINALIZADA":"RASCUNHO"));const payload=a.payload||{};Object.keys(payload).forEach(k=>{const v=payload[k];if(v!==""&&v!==null&&v!==undefined)lines.push((k+": "+(typeof v==="object"?JSON.stringify(v):String(v))).slice(0,1000))});lines.push("Evolucao: "+(a.evolution_final||a.evolution_draft||"Nao registrada"));const amendments=await pool.query("SELECT reason,content,created_at FROM assessment_amendments WHERE assessment_id=$1 AND user_id=$2 ORDER BY created_at",[a.id,uid]);amendments.rows.forEach(x=>lines.push("ADENDO "+x.created_at.toISOString().slice(0,10)+" | Motivo: "+x.reason+" | "+x.content))}
+  lines.push("","Gerado em: "+new Date().toISOString(),"Versao de exportacao: 1");const pdf=makeClinicalPdf(lines);await audit(uid,"patient.pdf_exported","patient",m[1]);res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":'attachment; filename="dermaquest-prontuario-'+m[1]+'.pdf"',"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Content-Length":pdf.length});res.end(pdf);return true
+ }
+ json(res,404,{error:"Rota de prontuário não encontrada."});return true
+}
+
 http.createServer(async (req,res)=>{
   const pathname=new URL(req.url,"http://localhost").pathname;
   try {
     if(pathname.startsWith("/api/") && ["POST","PUT","PATCH","DELETE"].includes(req.method) && !originAllowed(req)) return json(res,403,{error:"Origem da requisição não permitida."});
     if(pathname==="/api/health") return json(res,200,{ok:true,service:"feridas-enfermagem",database:dbReady?"connected":"not_configured"});
     if(pathname.startsWith("/api/auth/")) return await authRoute(req,res,pathname);
+    if(pathname.startsWith("/api/records/") && await clinicalRoute(req,res,pathname)) return;
     if(pathname==="/api/cases") return json(res,200,{cases});
     if(pathname==="/api/data" && (req.method==="GET" || req.method==="PUT")) {
       if(!pool || !dbReady) return authUnavailable(res);
