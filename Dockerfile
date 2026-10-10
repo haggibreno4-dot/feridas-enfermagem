@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 COPY . .
+RUN node --check server.js && node --check script.js && node --check advanced.js && node --check measurement.js && node --check learning.js && node --check atlas.js && node --check clinical-utils.js && npm test
 ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node", "server.js"]
