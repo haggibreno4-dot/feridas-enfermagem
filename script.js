@@ -58,7 +58,7 @@ function bindLogin(){
     error.style.color="var(--teal)";
     error.textContent=data.message||"Conta criada com sucesso. Entre com seu e-mail e senha para validar o acesso.";
    } else {
-    state.user=data.user; if(window.DermeAdvanced)await window.DermeAdvanced.load(); state.view="dashboard"; render();
+    state.user=data.user; if(window.DermeAdvanced)await window.DermeAdvanced.load();try{state.answers=JSON.parse(localStorage.getItem("dq-case-assessments")||"{}")}catch(e){state.answers={}}state.view="dashboard"; render();
    }
   } catch(err) {
    error.textContent=err.message==="Failed to fetch"?"Não foi possível conectar ao servidor. Tente novamente.":err.message;
@@ -74,7 +74,7 @@ function go(view){if(view==="simulator"&&!localStorage.getItem("dq-atlas-intro-c
 function openCase(id){state.selectedCaseId=id;state.view="study";state.showAnswer=false;render()}
 function render(){document.getElementById("app").innerHTML=state.user?appShell():loginView();if(state.user)renderContentOnly();else bindLogin()}
 async function loadCases(){state.cases=demoCases;try{const res=await fetch("/api/cases");if(res.ok){const data=await res.json();if(Array.isArray(data.cases)){const known=new Set(state.cases.map(c=>c.id));data.cases.filter(c=>!known.has(c.id)).forEach(c=>state.cases.push({...c,stage:c.stage||"Não especificado",tissueKey:c.tissueKey||"Misto",difficulty:c.difficulty||"Intermediário",signs:c.signs||"Sem sinais evidentes",visual:"pressure3",size:"Não informado",depth:"Não informado",edges:"Não informado",periwound:"Não informado",exudateAnswer:c.exudate||"Não informado",answerTissue:c.tissue||"Não informado",infection:"Avaliar presencialmente",clinicalNote:"Caso adicional recebido do servidor."}));}}}catch(e){}}
-async function boot(){try{const response=await fetch("/api/auth/me");if(response.ok){const data=await response.json();state.user=data.user}}catch(e){}await loadCases();if(window.DermeAdvanced&&state.user)await window.DermeAdvanced.load();render()}
+async function boot(){try{const response=await fetch("/api/auth/me");if(response.ok){const data=await response.json();state.user=data.user}}catch(e){}await loadCases();if(window.DermeAdvanced&&state.user)await window.DermeAdvanced.load();try{state.answers=JSON.parse(localStorage.getItem("dq-case-assessments")||"{}")}catch(e){state.answers={}}render()}
 boot();
 
 
