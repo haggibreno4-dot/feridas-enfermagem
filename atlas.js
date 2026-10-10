@@ -22,7 +22,7 @@ function atlasDiagram(mode){
 }
 function atlasHotspots(){
  var pts=[["intact",115,87],["periwound",270,103],["edge",324,145],["granulation",390,204],["slough",443,184],["eschar",487,184],["exudate",447,340],["depth",446,266],["tunnel",464,303]];
- return pts.map(function(p){return '<circle class="atlas-hotspot" data-atlas-region="'+p[0]+'" tabindex="0" role="button" aria-label="Explorar '+atlasEscape(atlasTopics[p[0]].name)+'" cx="'+p[1]+'" cy="'+p[2]+'" r="17"><title>'+atlasEscape(atlasTopics[p[0]].name)+'</title></circle>'}).join("");
+ return pts.map(function(p){return '<circle class="atlas-hotspot '+((window.dqAtlasSelected||"granulation")===p[0]?"is-selected":"")+'" data-atlas-region="'+p[0]+'" tabindex="0" role="button" aria-label="Explorar '+atlasEscape(atlasTopics[p[0]].name)+'" cx="'+p[1]+'" cy="'+p[2]+'" r="17"><title>'+atlasEscape(atlasTopics[p[0]].name)+'</title></circle>'}).join("");
 }
 function atlasView(){
  var saved=[];try{saved=JSON.parse(localStorage.getItem("dq-atlas-studied")||"[]")}catch(e){}
@@ -52,6 +52,7 @@ function atlasBind(){
 function atlasSelect(key,remember){
  if(!atlasTopics[key])return;
  window.dqAtlasSelected=key;
+ if(window.dqAtlasGuide&&remember!==false){var q=window.dqAtlasQuiz||{target:"slough",feedback:"",done:false};q.choice=key;q.feedback="Região selecionada. Confira sua resposta para receber a explicação.";q.done=false;window.dqAtlasQuiz=q;}
  if(remember!==false){try{var a=JSON.parse(localStorage.getItem("dq-atlas-studied")||"[]");if(!a.includes(key))a.push(key);localStorage.setItem("dq-atlas-studied",JSON.stringify(a))}catch(e){}}
  renderContentOnly();
 }
