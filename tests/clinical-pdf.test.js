@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { makeClinicalPdf } = require("../clinical-pdf.js");
 
 test("PDF clínico tem cabeçalho válido, catálogo e tabela xref", () => {
-  const pdf = makeClinicalPdf(["DERMAQUEST | FICHA DE AVALIACAO", "Paciente: PACIENTE-FICTICIO-01", "Não registrado"]);
+  const pdf = makeClinicalPdf(["DERMATRIZ | FICHA DE AVALIACAO", "Paciente: PACIENTE-FICTICIO-01", "Não registrado"]);
   const text = pdf.toString("ascii");
   assert.ok(text.startsWith("%PDF-1.4"));
   assert.match(text, /\/Type \/Catalog/);
