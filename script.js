@@ -76,3 +76,30 @@ function render(){document.getElementById("app").innerHTML=state.user?appShell()
 async function loadCases(){state.cases=demoCases;try{const res=await fetch("/api/cases");if(res.ok){const data=await res.json();if(Array.isArray(data.cases)){const known=new Set(state.cases.map(c=>c.id));data.cases.filter(c=>!known.has(c.id)).forEach(c=>state.cases.push({...c,stage:c.stage||"Não especificado",tissueKey:c.tissueKey||"Misto",difficulty:c.difficulty||"Intermediário",signs:c.signs||"Sem sinais evidentes",visual:"pressure3",size:"Não informado",depth:"Não informado",edges:"Não informado",periwound:"Não informado",exudateAnswer:c.exudate||"Não informado",answerTissue:c.tissue||"Não informado",infection:"Avaliar presencialmente",clinicalNote:"Caso adicional recebido do servidor."}));}}}catch(e){}}
 async function boot(){try{const response=await fetch("/api/auth/me");if(response.ok){const data=await response.json();state.user=data.user}}catch(e){}await loadCases();render()}
 boot();
+
+
+// Feedback tátil visual para cliques: salto elástico + partículas leves.
+// Delegação global mantém a interação funcionando também após renderizações da SPA.
+document.addEventListener("click", event => {
+  const target = event.target.closest("button, .button, .nav-btn, .home-action, .action, .case-row, [role='button']");
+  if (!target || target.disabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  target.classList.remove("tap-pop");
+  void target.offsetWidth;
+  target.classList.add("tap-pop");
+  target.addEventListener("animationend", () => target.classList.remove("tap-pop"), { once: true });
+  const rect = target.getBoundingClientRect();
+  const x = Number.isFinite(event.clientX) && event.clientX ? event.clientX : rect.left + rect.width / 2;
+  const y = Number.isFinite(event.clientY) && event.clientY ? event.clientY : rect.top + rect.height / 2;
+  const vectors = [[-18,-15],[17,-18],[-20,12],[19,13],[0,-23]];
+  vectors.forEach(([dx,dy], index) => {
+    const spark = document.createElement("span");
+    spark.className = "tap-spark";
+    spark.style.left = x + "px";
+    spark.style.top = y + "px";
+    spark.style.setProperty("--dx", dx + "px");
+    spark.style.setProperty("--dy", dy + "px");
+    spark.style.animationDelay = (index * 18) + "ms";
+    document.body.appendChild(spark);
+    spark.addEventListener("animationend", () => spark.remove(), { once: true });
+  });
+});
