@@ -107,9 +107,8 @@ async function authRoute(req,res,pathname) {
     const passwordHash=await bcrypt.hash(password,12);
     try {
       const result=await pool.query("INSERT INTO users(name,email,password_hash) VALUES($1,$2,$3) RETURNING id,name,email",[name,email,passwordHash]);
-      const user=result.rows[0], token=crypto.randomBytes(32).toString("base64url");
-      await pool.query("INSERT INTO user_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+INTERVAL '7 days')",[hashToken(token),user.id]);
-      return json(res,201,{user},{...sessionCookie(req,token)});
+      const user=result.rows[0];
+      return json(res,201,{message:"Conta criada com sucesso. Faça login para validar o acesso.",user});
     } catch(e) {
       if(e.code==="23505") return json(res,409,{error:"Este e-mail já está cadastrado."});
       throw e;
