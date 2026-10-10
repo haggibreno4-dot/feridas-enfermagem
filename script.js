@@ -102,4 +102,4 @@ document.addEventListener("click", event => {
     document.body.appendChild(spark);
     spark.addEventListener("animationend", () => spark.remove(), { once: true });
   });
-});
+}, true);
