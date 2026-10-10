@@ -252,6 +252,9 @@ http.createServer(async (req,res)=>{
       return json(res,200,{ok:true,updatedAt:result.rows[0].updated_at});
     }
     const requested=pathname==="/"?"index.html":decodeURIComponent(pathname).replace(/^\/+/, "");
+    const publicFiles=new Set(["index.html","privacy.html","style.css","script.js","atlas.js","clinical-utils.js","learning.js","advanced.js","clinical-records.js","bandage-x.svg","favicon.ico","manifest.json","robots.txt"]);
+    const publicAsset=/^assets\/[A-Za-z0-9._/-]+\.(svg|png|jpe?g|webp|woff2|ico)$/i.test(requested)&&!requested.split("/").includes("..");
+    if(!publicFiles.has(requested)&&!publicAsset)return send(res,404,"text/plain; charset=utf-8","Not found");
     const file=path.resolve(root,requested);
     if(file!==root && !file.startsWith(root+path.sep)) return send(res,403,"text/plain; charset=utf-8","Forbidden");
     fs.readFile(file,(err,data)=>{if(err)return send(res,404,"text/plain; charset=utf-8","Not found");send(res,200,types[path.extname(file)]||"application/octet-stream",data)});
