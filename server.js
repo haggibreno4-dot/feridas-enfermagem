@@ -184,8 +184,18 @@ async function clinicalRoute(req,res,pathname){
   const assessments=await pool.query("SELECT a.id,a.wound_id,a.assessed_at,a.status,a.evolution_draft,a.evolution_final,a.version,a.finalized_at,a.payload,w.label AS wound_label,u.name AS professional_name,(SELECT COALESCE(json_agg(json_build_object('id',am.id,'reason',am.reason,'content',am.content,'created_at',am.created_at) ORDER BY am.created_at),'[]'::json) FROM assessment_amendments am WHERE am.assessment_id=a.id AND am.user_id=$2) AS amendments FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 JOIN users u ON u.id=a.user_id WHERE a.patient_id=$1 AND a.user_id=$2 ORDER BY a.assessed_at DESC LIMIT 100",[m[1],uid]);json(res,200,{patient:p.rows[0],wounds:wounds.rows,assessments:assessments.rows});return true
  }
  if(m&&method==="PATCH"){
-  const b=await readBody(req),code=cleanText(b.patientCode,64),name=cleanText(b.displayName,160);if(!code||!name){json(res,400,{error:"Identificador e nome são obrigatórios."});return true}if(!validDateString(cleanText(b.birthDate,10))){json(res,400,{error:"Data de nascimento inválida."});return true}
-  try{const r=await pool.query("UPDATE patients SET patient_code=$3,display_name=$4,birth_date=NULLIF($5,'')::date,sex=$6,contact=$7,clinical_context=$8,comorbidities=$9,allergies=$10,observations=$11,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *",[m[1],uid,code,name,cleanText(b.birthDate,10),cleanText(b.sex,40),cleanText(b.contact,200),cleanText(b.clinicalContext),cleanText(b.comorbidities),cleanText(b.allergies),cleanText(b.observations)]);if(!r.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}await audit(uid,"patient.updated","patient",m[1]);json(res,200,{patient:r.rows[0]});return true}catch(e){if(e.code==="23505"){json(res,409,{error:"Esse identificador já existe na sua lista."});return true}throw e}
+  const b=await readBody(req),code=cleanText(b.patientCode,64),name=cleanText(b.displayName,160),reason=cleanText(b.changeReason,500);
+  if(!code||!name){json(res,400,{error:"Identificador e nome são obrigatórios."});return true}
+  if(!reason){json(res,400,{error:"Informe o motivo da alteração cadastral."});return true}
+  if(!validDateString(cleanText(b.birthDate,10))){json(res,400,{error:"Data de nascimento inválida."});return true}
+  try{
+   const previous=await pool.query("SELECT id FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);
+   if(!previous.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+   const r=await pool.query("UPDATE patients SET patient_code=$3,display_name=$4,birth_date=NULLIF($5,'')::date,sex=$6,contact=$7,clinical_context=$8,comorbidities=$9,allergies=$10,observations=$11,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *",[m[1],uid,code,name,cleanText(b.birthDate,10),cleanText(b.sex,40),cleanText(b.contact,200),cleanText(b.clinicalContext),cleanText(b.comorbidities),cleanText(b.allergies),cleanText(b.observations)]);
+   if(!r.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+   await audit(uid,"patient.updated","patient",m[1],{changedFields:["patientCode","displayName","birthDate","sex","contact","clinicalContext","comorbidities","allergies","observations"],reason:reason});
+   json(res,200,{patient:r.rows[0]});return true;
+  }catch(e){if(e.code==="23505"){json(res,409,{error:"Esse identificador já existe na sua lista."});return true}throw e}
  }
  m=pathname.match(/^\/api\/records\/patients\/(\d+)\/wounds$/);
  if(m&&method==="POST"){
