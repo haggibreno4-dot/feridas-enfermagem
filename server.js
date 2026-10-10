@@ -163,7 +163,7 @@ async function authRoute(req,res,pathname) {
 
 function cleanText(value,max=4000){return String(value==null?"":value).trim().slice(0,max)}
 function validDateString(value){if(!value)return true;if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+"T00:00:00Z");return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value}
-function audit(userId,action,entityType,entityId){return pool.query("INSERT INTO audit_events(user_id,action,entity_type,entity_id) VALUES($1,$2,$3,$4)",[userId,action,entityType,entityId||null])}
+function audit(userId,action,entityType,entityId,details){return pool.query("INSERT INTO audit_events(user_id,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5::jsonb)",[userId,action,entityType,entityId||null,JSON.stringify(details||{})])}
 async function clinicalRoute(req,res,pathname){
  if(!pathname.startsWith("/api/records/"))return false;
  if(!pool||!dbReady){authUnavailable(res);return true}
