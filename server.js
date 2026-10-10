@@ -150,7 +150,7 @@ http.createServer(async (req,res)=>{
       if(!user) return json(res,401,{error:"Faça login para sincronizar seu progresso."});
       if(req.method==="GET") {
         const saved=await pool.query("SELECT data,updated_at FROM user_app_data WHERE user_id=$1",[user.id]);
-        return json(res,200,{data:saved.rows[0]?.data||{},updatedAt:saved.rows[0]?.updated_at||null});
+        return json(res,200,{data:saved.rows[0]?.data||{},exists:!!saved.rows[0],userId:String(user.id),updatedAt:saved.rows[0]?.updated_at||null});
       }
       const body=await readBody(req);
       if(!body.data || typeof body.data!=="object" || Array.isArray(body.data)) return json(res,400,{error:"Formato de dados inválido."});
