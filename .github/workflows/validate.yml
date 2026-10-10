@@ -1,4 +1,4 @@
-name: DermeQuest validation
+name: DermaTriz validation
 on:
   pull_request:
     branches: [main]
