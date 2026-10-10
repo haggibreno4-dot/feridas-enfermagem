@@ -53,7 +53,7 @@ test("distribuição de tecidos rejeita valores fora do intervalo", () => {
 
 test("evolução em rascunho inclui apenas campos clínicos preenchidos", () => {
   const text = buildWoundNarrative({ reported:"Paciente refere dor ao trocar cobertura", observed:"Leito com granulação observada", length:2.5, primaryDressing:"Espuma de poliuretano" });
-  assert.match(text, /paciente\\/acompanhante/i Paciente refere dor ao trocar cobertura/);
+  assert.match(text, /Relato do paciente\\/acompanhante: Paciente refere dor ao trocar cobertura/);
   assert.match(text, /Observação profissional: Leito com granulação observada/);
   assert.match(text, /Comprimento \(cm\): 2.5/);
   assert.match(text, /Cobertura primária registrada: Espuma de poliuretano/);
