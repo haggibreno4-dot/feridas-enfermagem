@@ -53,6 +53,6 @@ function atlasSelect(key,remember){
  if(!atlasTopics[key])return;
  window.dqAtlasSelected=key;
  if(window.dqAtlasGuide&&remember!==false){var q=window.dqAtlasQuiz||{target:"slough",feedback:"",done:false};q.choice=key;q.feedback="Região selecionada. Confira sua resposta para receber a explicação.";q.done=false;window.dqAtlasQuiz=q;}
- if(remember!==false){try{var a=JSON.parse(localStorage.getItem("dq-atlas-studied")||"[]");if(!a.includes(key))a.push(key);localStorage.setItem("dq-atlas-studied",JSON.stringify(a))}catch(e){}}
+ if(remember!==false){try{var a=JSON.parse(localStorage.getItem("dq-atlas-studied")||"[]");if(!a.includes(key))a.push(key);localStorage.setItem("dq-atlas-studied",JSON.stringify(a));if(window.DermeAdvanced)window.DermeAdvanced.persist()}catch(e){}}
  renderContentOnly();
 }
