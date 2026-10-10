@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "advanced.js"), "utf8");
+const index = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 function createApp(view, initial = {}) {
   const store = new Map(Object.entries(initial).map(([k, v]) => [k, JSON.stringify(v)]));
@@ -36,32 +37,32 @@ test("biblioteca apresenta 13 tipos de cobertura", () => {
   assert.match(html, /Protetor de pele/);
 });
 
-test("flashcards incluem conceitos clínicos e mensuração", () => {
-  const app = createApp("flashcards");
-  assert.equal(app.DermeAdvanced.counts.flashcards, 14);
-  assert.match(app.DermeAdvanced.render(), /Repetição espaçada|REPETIÇÃO ESPAÇADA/);
+
+test("flashcards, Caso do Dia e prática guiada foram removidos do módulo avançado", () => {
+  for (const view of ["flashcards", "daily", "clinical", "evolution"]) {
+    const app = createApp(view);
+    assert.equal(app.DermeAdvanced.render(), null);
+  }
+  assert.equal(source.includes("function flashcards"), false);
+  assert.equal(source.includes("function daily("), false);
+  assert.equal(source.includes("function clinical("), false);
+  assert.equal(source.includes("function evolution("), false);
+  assert.equal(index.includes('data-view="flashcards"'), false);
+  assert.equal(index.includes('data-view="daily"'), false);
 });
 
-test("caso do dia inclui três perguntas", () => {
-  const app = createApp("daily");
-  const html = app.DermeAdvanced.render();
-  assert.equal((html.match(/class="daily-question"/g) || []).length, 3);
-  assert.match(html, /Caso fictício/);
+test("ferramenta de medição não é carregada e não existe no repositório", () => {
+  assert.equal(index.includes("measurement.js"), false);
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "measurement.js")), false);
 });
 
-test("prática guiada apresenta etapas e histórico", () => {
-  const app = createApp("clinical");
+test("matriz de coberturas usa contexto e explica limitações", () => {
+  const app = createApp("coverage");
   const html = app.DermeAdvanced.render();
-  assert.match(html, /Etapa 1 \/ 3/);
-  assert.match(html, /Histórico de prática/);
-});
-
-test("rascunho de evolução não inventa campos vazios", () => {
-  const app = createApp("evolution", {
-    "dq-evolution-draft": { context: "Pessoa relata dor 3/10", response: "Relata melhora" }
-  });
-  const html = app.DermeAdvanced.render();
-  assert.match(html, /Pessoa relata dor 3\/10/);
-  assert.match(html, /Relata melhora/);
-  assert.doesNotMatch(html, /Temperatura:|Sinais vitais:/);
+  assert.match(html, /matrixEtiology/);
+  assert.match(html, /matrixTissue/);
+  assert.match(html, /matrixSkin/);
+  assert.match(html, /Composição:/);
+  assert.match(html, /Precauções:/);
+  assert.ok(source.includes("Por que aparece:"));
 });
