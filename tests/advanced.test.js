@@ -66,3 +66,31 @@ test("matriz de coberturas usa contexto e explica limitações", () => {
   assert.match(html, /Precauções:/);
   assert.ok(source.includes("Por que aparece:"));
 });
+
+test("DermaTriz PWA manifest and brand mark are wired", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"));
+  const logo = fs.readFileSync(path.join(__dirname, "..", "bandage-x.svg"), "utf8");
+  assert.match(index, /rel="manifest" href="\\/manifest\\.json"/);
+  assert.equal(manifest.short_name, "DermaTriz");
+  assert.equal(manifest.icons[0].src, "/bandage-x.svg");
+  assert.match(logo, /rx="15"/);
+  assert.match(logo, /fill="#fff"/);
+});
+
+test("burns module saves structured assessments through the existing wound history", () => {
+  const burns = fs.readFileSync(path.join(__dirname, "..", "burns.js"), "utf8");
+  assert.match(burns, /function burnSvg/);
+  assert.match(burns, /depthData/);
+  assert.match(burns, /\/api\/records\/wounds\/.*\/assessments/);
+  assert.match(index, /burns\\.js/);
+});
+
+test("clinical record fields include structured observations and safe archive/color actions", () => {
+  const records = fs.readFileSync(path.join(__dirname, "..", "clinical-records.js"), "utf8");
+  assert.match(records, /exudateTypeSelected/);
+  assert.match(records, /edgeFeatures/);
+  assert.match(records, /periwoundFeatures/);
+  assert.match(records, /tissueTypes/);
+  assert.match(records, /archive-patient/);
+  assert.match(records, /save-color/);
+});
