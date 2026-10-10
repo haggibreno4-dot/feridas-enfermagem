@@ -4,7 +4,8 @@
   "private": true,
   "description": "Plataforma de estudos sobre avaliação e cuidado de feridas em enfermagem.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"
