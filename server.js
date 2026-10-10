@@ -26,7 +26,7 @@ const cases = [
 const types = {".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"application/javascript; charset=utf-8",".json":"application/json; charset=utf-8",".svg":"image/svg+xml",".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".ico":"image/x-icon"};
 
 function send(res, status, type, data, extraHeaders = {}) {
-  res.writeHead(status, {"Content-Type":type,"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin",...extraHeaders});
+  res.writeHead(status, {"Content-Type":type,"Cache-Control":"no-store","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=()","Content-Security-Policy":"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'","Cross-Origin-Opener-Policy":"same-origin",...extraHeaders});
   res.end(data);
 }
 function json(res, status, data, headers) { send(res,status,"application/json; charset=utf-8",JSON.stringify(data),headers); }
@@ -54,6 +54,11 @@ function readBody(req) {
   });
 }
 function hashToken(token) { return crypto.createHash("sha256").update(token).digest("hex"); }
+function originAllowed(req) {
+  const origin=req.headers.origin;
+  if(!origin) return true;
+  try { return new URL(origin).host === req.headers.host; } catch { return false; }
+}
 function getClientKey(req) { return (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").toString().split(",")[0].trim(); }
 function allowAttempt(req) {
   const key=getClientKey(req), now=Date.now(), item=loginAttempts.get(key);
@@ -141,6 +146,7 @@ async function authRoute(req,res,pathname) {
 http.createServer(async (req,res)=>{
   const pathname=new URL(req.url,"http://localhost").pathname;
   try {
+    if(pathname.startsWith("/api/") && ["POST","PUT","PATCH","DELETE"].includes(req.method) && !originAllowed(req)) return json(res,403,{error:"Origem da requisição não permitida."});
     if(pathname==="/api/health") return json(res,200,{ok:true,service:"feridas-enfermagem",database:dbReady?"connected":"not_configured"});
     if(pathname.startsWith("/api/auth/")) return await authRoute(req,res,pathname);
     if(pathname==="/api/cases") return json(res,200,{cases});
