@@ -165,3 +165,4 @@ button,.button,.nav-btn,.case-card,.panel,.stat,.home-action,.case-row{ -webkit-
 @media(max-width:600px){.record-clinical-grid,.record-structured-details dl,.record-trend-grid{grid-template-columns:1fr}}
 
 .record-wound-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.record-wound-actions .button{font-size:12px;padding:10px 12px}@media(max-width:560px){.record-wound-actions{width:100%;display:grid;grid-template-columns:1fr}.record-wound-actions .button{width:100%}}
+.record-audit-history{display:grid;gap:10px}.record-audit-history h2{margin:0}.record-audit-history article{border-top:1px solid var(--line);padding:10px 0}.record-audit-history article div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.record-audit-history small{color:var(--muted)}.record-audit-history p{font-size:12px;margin:6px 0 0;overflow-wrap:anywhere}
