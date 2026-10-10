@@ -27,7 +27,7 @@
     sections.forEach(function(section){var rows=[];Object.keys(section[1]).forEach(function(key){var value=payload[key];if(value!==undefined&&value!==null&&String(value).trim()!==""&&value!==false)rows.push(section[1][key]+": "+String(value).trim().replace(/[\\r\\n]+/g," "))});if(rows.length)lines.push("",section[0]+":",rows.join("; ")+".")});
     var tissues=["Granulação","Esfacelo","Necrose","Epitelização","Outros"].filter(function(name){return payload["tissue-"+name]!==undefined&&payload["tissue-"+name]!==null&&payload["tissue-"+name]!==""}).map(function(name){return name+" "+payload["tissue-"+name]+"%"});
     if(tissues.length)lines.push("Tecidos e percentuais informados: "+tissues.join(", ")+(payload.tissueCompleteness==="Avaliação parcial"?" (distribuição parcial).":"."));
-    return lines.join("\\n");
+    return lines.join("\n");
   }
   var api={calculateBradenScore:calculateBradenScore,validateTissueDistribution:validateTissueDistribution,buildWoundNarrative:buildWoundNarrative};
   root.ClinicalUtils=api;
