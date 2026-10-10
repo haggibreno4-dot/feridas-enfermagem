@@ -93,17 +93,18 @@ async function initDatabase() {
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-  const version="001_clinical_records";
-  const applied=await pool.query("SELECT version FROM schema_migrations WHERE version=$1",[version]);
-  if(!applied.rowCount){
-    const migration=fs.readFileSync(path.join(root,"migrations","001_clinical_records.sql"),"utf8");
-    const client=await pool.connect();
-    try{
-      await client.query("BEGIN");
-      await client.query(migration);
-      await client.query("INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT DO NOTHING",[version]);
-      await client.query("COMMIT");
-    }catch(err){await client.query("ROLLBACK");throw err}finally{client.release()}
+  for(const version of ["001_clinical_records","002_patient_archive_color"]){
+    const applied=await pool.query("SELECT version FROM schema_migrations WHERE version=$1",[version]);
+    if(!applied.rowCount){
+      const migration=fs.readFileSync(path.join(root,"migrations",version+".sql"),"utf8");
+      const client=await pool.connect();
+      try{
+        await client.query("BEGIN");
+        await client.query(migration);
+        await client.query("INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT DO NOTHING",[version]);
+        await client.query("COMMIT");
+      }catch(err){await client.query("ROLLBACK");throw err}finally{client.release()}
+    }
   }
   dbReady=true;
   console.log("Banco e migrações versionadas inicializados.");
@@ -171,15 +172,28 @@ async function clinicalRoute(req,res,pathname){
  const uid=user.id,method=req.method;
  if(pathname==="/api/records/patients"&&method==="GET"){
   const q=cleanText(new URL(req.url,"http://localhost").searchParams.get("q"),100);
-  const r=await pool.query("SELECT p.id,p.patient_code,p.display_name,p.created_at,p.updated_at,(SELECT COUNT(*) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS assessment_count,(SELECT MAX(a.assessed_at) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS last_assessment FROM patients p WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.patient_code ILIKE '%'||$2||'%') ORDER BY p.display_name LIMIT 250",[uid,q]);json(res,200,{patients:r.rows});return true
+  const r=await pool.query("SELECT p.id,p.patient_code,p.display_name,p.card_color,p.created_at,p.updated_at,(SELECT COUNT(*) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS assessment_count,(SELECT MAX(a.assessed_at) FROM wound_assessments a WHERE a.patient_id=p.id AND a.user_id=p.user_id) AS last_assessment FROM patients p WHERE p.user_id=$1 AND p.archived_at IS NULL AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.patient_code ILIKE '%'||$2||'%') ORDER BY p.display_name LIMIT 250",[uid,q]);json(res,200,{patients:r.rows});return true
  }
  if(pathname==="/api/records/patients"&&method==="POST"){
   const b=await readBody(req),code=cleanText(b.patientCode,64),name=cleanText(b.displayName,160);if(!code||!name){json(res,400,{error:"Informe um identificador interno e um nome ou rótulo para o paciente."});return true}if(!validDateString(cleanText(b.birthDate,10))){json(res,400,{error:"Data de nascimento inválida."});return true}
   try{const r=await pool.query("INSERT INTO patients(user_id,patient_code,display_name,birth_date,sex,contact,clinical_context,comorbidities,allergies,observations) VALUES($1,$2,$3,NULLIF($4,'')::date,$5,$6,$7,$8,$9,$10) RETURNING *",[uid,code,name,cleanText(b.birthDate,10),cleanText(b.sex,40),cleanText(b.contact,200),cleanText(b.clinicalContext),cleanText(b.comorbidities),cleanText(b.allergies),cleanText(b.observations)]);await audit(uid,"patient.created","patient",r.rows[0].id);json(res,201,{patient:r.rows[0]});return true}catch(e){if(e.code==="23505"){json(res,409,{error:"Esse identificador já existe na sua lista."});return true}if(e.code==="22007"||e.code==="22008"){json(res,400,{error:"Data de nascimento inválida."});return true}throw e}
  }
- let m=pathname.match(/^\/api\/records\/patients\/(\d+)$/);
+ let m=pathname.match(/^\/api\/records\/patients\/(\d+)\/color$/);
+ if(m&&method==="PATCH"){
+  const b=await readBody(req),color=cleanText(b.color,24),allowed=["default","green","blue","purple","orange","yellow","pink","red","turquoise","gray"];
+  if(!allowed.includes(color)){json(res,400,{error:"Selecione uma cor válida."});return true}
+  const r=await pool.query("UPDATE patients SET card_color=$3,updated_at=NOW() WHERE id=$1 AND user_id=$2 AND archived_at IS NULL RETURNING id,card_color",[m[1],uid,color]);
+  if(!r.rowCount){json(res,404,{error:"Prontuário não encontrado ou sem permissão."});return true}
+  await audit(uid,"patient.color_changed","patient",m[1],{color});json(res,200,{patient:r.rows[0]});return true;
+ }
+ m=pathname.match(/^\/api\/records\/patients\/(\d+)$/);
+ if(m&&method==="DELETE"){
+  const r=await pool.query("UPDATE patients SET archived_at=NOW(),updated_at=NOW() WHERE id=$1 AND user_id=$2 AND archived_at IS NULL RETURNING id,display_name,patient_code",[m[1],uid]);
+  if(!r.rowCount){json(res,404,{error:"Prontuário não encontrado ou já arquivado."});return true}
+  await audit(uid,"patient.archived","patient",m[1],{retention:"soft_archive"});json(res,200,{archived:true,patient:r.rows[0]});return true;
+ }
  if(m&&method==="GET"){
-  const p=await pool.query("SELECT * FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
+  const p=await pool.query("SELECT * FROM patients WHERE id=$1 AND user_id=$2 AND archived_at IS NULL",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
   const wounds=await pool.query("SELECT w.*,(SELECT COUNT(*) FROM wound_assessments a WHERE a.wound_id=w.id AND a.user_id=$2) AS assessment_count,(SELECT MAX(a.assessed_at) FROM wound_assessments a WHERE a.wound_id=w.id AND a.user_id=$2) AS last_assessment FROM wounds w WHERE w.patient_id=$1 AND w.user_id=$2 ORDER BY w.created_at DESC",[m[1],uid]);
   const assessments=await pool.query("SELECT a.id,a.wound_id,a.assessed_at,a.status,a.evolution_draft,a.evolution_final,a.version,a.finalized_at,a.payload,w.label AS wound_label,u.name AS professional_name,(SELECT COALESCE(json_agg(json_build_object('id',am.id,'reason',am.reason,'content',am.content,'created_at',am.created_at) ORDER BY am.created_at),'[]'::json) FROM assessment_amendments am WHERE am.assessment_id=a.id AND am.user_id=$2) AS amendments FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 JOIN users u ON u.id=a.user_id WHERE a.patient_id=$1 AND a.user_id=$2 ORDER BY a.assessed_at DESC LIMIT 100",[m[1],uid]);const auditHistory=await pool.query("SELECT action,details,created_at FROM audit_events WHERE user_id=$2 AND entity_type='patient' AND entity_id=$1 ORDER BY created_at DESC LIMIT 50",[m[1],uid]);json(res,200,{patient:p.rows[0],wounds:wounds.rows,assessments:assessments.rows,auditHistory:auditHistory.rows});return true
  }
@@ -229,11 +243,11 @@ async function clinicalRoute(req,res,pathname){
   if(assessmentId){const acheck=await pool.query("SELECT wound_id FROM wound_assessments WHERE id=$1 AND patient_id=$2 AND user_id=$3",[assessmentId,m[1],uid]);if(!acheck.rowCount){json(res,404,{error:"Avaliação não encontrada neste prontuário."});return true}if(woundId&&String(woundId)!==String(acheck.rows[0].wound_id)){json(res,400,{error:"A avaliação não pertence à ferida selecionada."});return true}woundId=String(acheck.rows[0].wound_id)}
   if(woundId){const wcheck=await pool.query("SELECT id FROM wounds WHERE id=$1 AND patient_id=$2 AND user_id=$3",[woundId,m[1],uid]);if(!wcheck.rowCount){json(res,404,{error:"Ferida não encontrada neste prontuário."});return true}}
   const wounds=await pool.query("SELECT * FROM wounds WHERE patient_id=$1 AND user_id=$2 AND ($3::bigint IS NULL OR id=$3) ORDER BY created_at",[m[1],uid,woundId]);const as=await pool.query("SELECT a.*,w.label AS wound_label,w.location,u.name AS professional_name FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 JOIN users u ON u.id=a.user_id WHERE a.patient_id=$1 AND a.user_id=$2 AND ($3::bigint IS NULL OR a.wound_id=$3) AND ($4::bigint IS NULL OR a.id=$4) ORDER BY a.assessed_at",[m[1],uid,woundId,assessmentId]);
-  const lines=["DERMAQUEST | FICHA DE AVALIACAO DE FERIDAS","Exportacao autenticada | Dados registrados, sem inferencias clinicas","","Paciente: "+p.rows[0].display_name,"Identificador: "+p.rows[0].patient_code,"Cadastro: "+p.rows[0].created_at.toISOString().slice(0,10),"Nascimento: "+(p.rows[0].birth_date?new Date(p.rows[0].birth_date).toISOString().slice(0,10):"Nao registrado"),"Sexo: "+(p.rows[0].sex||"Nao registrado"),"Contato: "+(p.rows[0].contact||"Nao registrado"),"Contexto clinico: "+(p.rows[0].clinical_context||"Nao registrado"),"Comorbidades: "+(p.rows[0].comorbidities||"Nao registrado"),"Alergias: "+(p.rows[0].allergies||"Nao registrado"),"Observacoes: "+(p.rows[0].observations||"Nao registrado"),"","FERIDAS REGISTRADAS"];
+  const lines=["DERMATRIZ | FICHA DE AVALIACAO DE FERIDAS","Exportacao autenticada | Dados registrados, sem inferencias clinicas","","Paciente: "+p.rows[0].display_name,"Identificador: "+p.rows[0].patient_code,"Cadastro: "+p.rows[0].created_at.toISOString().slice(0,10),"Nascimento: "+(p.rows[0].birth_date?new Date(p.rows[0].birth_date).toISOString().slice(0,10):"Nao registrado"),"Sexo: "+(p.rows[0].sex||"Nao registrado"),"Contato: "+(p.rows[0].contact||"Nao registrado"),"Contexto clinico: "+(p.rows[0].clinical_context||"Nao registrado"),"Comorbidades: "+(p.rows[0].comorbidities||"Nao registrado"),"Alergias: "+(p.rows[0].allergies||"Nao registrado"),"Observacoes: "+(p.rows[0].observations||"Nao registrado"),"","FERIDAS REGISTRADAS"];
   wounds.rows.forEach(w=>lines.push("- "+w.wound_code+" | "+w.label+" | "+w.location+" | Lateralidade: "+(w.laterality||"Nao registrada")+" | Etiologia: "+(w.etiology||"Nao registrada")+" | Classificacao: "+(w.classification||"Nao registrada")));
-  const fieldLabels={assessedAt:"Data e horário",etiology:"Etiologia",classification:"Classificação/estágio",classificationNotes:"Observações da classificação",onsetDate:"Início da lesão",length:"Comprimento (cm)",width:"Largura (cm)",depth:"Profundidade (cm)",measurementMethod:"Método de medida",informationSource:"Origem da informação",diabetes:"Diabetes mellitus",mobility:"Mobilidade",nutrition:"Estado nutricional",continence:"Continência/umidade",pain:"Dor relatada",painMethod:"Método de avaliação da dor",painScore:"Escore de dor",historyTreatment:"Tratamentos anteriores",clinicalFactors:"Fatores clínicos",anamnesisNotes:"Observações de anamnese",tissueCompleteness:"Composição do leito",bedNotes:"Achados do leito",exudateAmount:"Quantidade de exsudato",exudateType:"Característica do exsudato",odor:"Odor avaliado",edgeAdherent:"Aderência das bordas",periwound:"Pele perilesional",edgesNotes:"Bordas e descolamento",exudateNotes:"Observações sobre exsudato",localSigns:"Achados locais",infectionConcern:"Suspeita clínica registrada",clinicalSignsNotes:"Sinais clínicos",cleaning:"Limpeza realizada",primaryDressing:"Cobertura primária registrada",secondaryDressing:"Cobertura secundária",products:"Produtos complementares",procedure:"Procedimento registrado",tolerance:"Tolerância",intercurrences:"Intercorrências",guidance:"Orientações fornecidas",followupPlan:"Plano de acompanhamento",reassessmentDate:"Reavaliação prevista",reported:"Relato do paciente/acompanhante",observed:"Achados observados pelo profissional",otherNotes:"Observações adicionais"};
+  const fieldLabels={assessedAt:"Data e horário",etiology:"Etiologia",exudateTypeSelected:"Tipos de exsudato",exudateConsistency:"Consistência do exsudato",exudateAspect:"Cor/aspecto do exsudato",exudateLocation:"Localização do exsudato",exudateOther:"Outro tipo de exsudato",edgeFeatures:"Características das bordas",edgeLocation:"Localização das alterações nas bordas",edgeExtent:"Extensão da alteração na borda",edgeOther:"Outra característica da borda",periwoundFeatures:"Características da pele perilesional",periwoundLocation:"Localização perilesional",periwoundExtent:"Extensão perilesional",periwoundSymptoms:"Sintomas relatados",periwoundOther:"Outra alteração perilesional",tissueTypes:"Tecidos identificados no leito",tissueOther:"Outro tecido do leito",tissueLocation:"Localização dos tecidos",tissueVisual:"Características visuais do leito",depthFeatures:"Profundidade e estruturas",depthOther:"Outras estruturas",burnMechanism:"Mecanismo da queimadura",burnDepth:"Profundidade estimada da queimadura",burnLocation:"Localização da queimadura",burnDepthCertainty:"Certeza da profundidade",burnTBSA:"Superfície corporal estimada (%)",burnTBSAmethod:"Método de estimativa da superfície corporal",burnCirculation:"Perfusão/circulação distal",burnBlisters:"Bolhas",burnSensitivity:"Sensibilidade avaliada",burnTimeSince:"Tempo desde o evento",burnReferral:"Encaminhamento",classification:"Classificação/estágio",classificationNotes:"Observações da classificação",onsetDate:"Início da lesão",length:"Comprimento (cm)",width:"Largura (cm)",depth:"Profundidade (cm)",measurementMethod:"Método de medida",informationSource:"Origem da informação",diabetes:"Diabetes mellitus",mobility:"Mobilidade",nutrition:"Estado nutricional",continence:"Continência/umidade",pain:"Dor relatada",painMethod:"Método de avaliação da dor",painScore:"Escore de dor",historyTreatment:"Tratamentos anteriores",clinicalFactors:"Fatores clínicos",anamnesisNotes:"Observações de anamnese",tissueCompleteness:"Composição do leito",bedNotes:"Achados do leito",exudateAmount:"Quantidade de exsudato",exudateType:"Característica do exsudato",odor:"Odor avaliado",edgeAdherent:"Aderência das bordas",periwound:"Pele perilesional",edgesNotes:"Bordas e descolamento",exudateNotes:"Observações sobre exsudato",localSigns:"Achados locais",infectionConcern:"Suspeita clínica registrada",clinicalSignsNotes:"Sinais clínicos",cleaning:"Limpeza realizada",primaryDressing:"Cobertura primária registrada",secondaryDressing:"Cobertura secundária",products:"Produtos complementares",procedure:"Procedimento registrado",tolerance:"Tolerância",intercurrences:"Intercorrências",guidance:"Orientações fornecidas",followupPlan:"Plano de acompanhamento",reassessmentDate:"Reavaliação prevista",reported:"Relato do paciente/acompanhante",observed:"Achados observados pelo profissional",otherNotes:"Observações adicionais"};
   for(let i=0;i<as.rows.length;i++){const a=as.rows[i];lines.push("","AVALIACAO "+(i+1)+" | "+new Date(a.assessed_at).toISOString()+" | "+a.wound_label+" | Profissional: "+a.professional_name+" | Versao: "+a.version+" | "+(a.status==="final"?"FINALIZADA":"RASCUNHO"));const payload=a.payload||{};Object.keys(payload).forEach(k=>{const v=payload[k];if(v!==""&&v!==null&&v!==undefined){const label=fieldLabels[k]||(k.startsWith("tissue-")?"Percentual de "+k.slice(7)+" (%)":k);lines.push((label+": "+(typeof v==="object"?JSON.stringify(v):String(v))).slice(0,1000))}});lines.push("Evolucao: "+(a.evolution_final||a.evolution_draft||"Nao registrada"));const amendments=await pool.query("SELECT reason,content,created_at FROM assessment_amendments WHERE assessment_id=$1 AND user_id=$2 ORDER BY created_at",[a.id,uid]);amendments.rows.forEach(x=>lines.push("ADENDO "+x.created_at.toISOString().slice(0,10)+" | Motivo: "+x.reason+" | "+x.content))}
-  lines.push("","Gerado em: "+new Date().toISOString(),"Versao de exportacao: 1");const pdf=makeClinicalPdf(lines);await audit(uid,assessmentId?"assessment.pdf_exported":woundId?"wound.pdf_exported":"patient.pdf_exported",assessmentId?"assessment":woundId?"wound":"patient",assessmentId||woundId||m[1]);res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":'attachment; filename="dermaquest-prontuario-'+m[1]+'.pdf"',"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Content-Length":pdf.length});res.end(pdf);return true
+  lines.push("","Gerado em: "+new Date().toISOString(),"Versao de exportacao: 1");const pdf=makeClinicalPdf(lines);await audit(uid,assessmentId?"assessment.pdf_exported":woundId?"wound.pdf_exported":"patient.pdf_exported",assessmentId?"assessment":woundId?"wound":"patient",assessmentId||woundId||m[1]);res.writeHead(200,{"Content-Type":"application/pdf","Content-Disposition":'attachment; filename="dermatriz-prontuario-'+m[1]+'.pdf"',"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Content-Length":pdf.length});res.end(pdf);return true
  }
  json(res,404,{error:"Rota de prontuário não encontrada."});return true
 }
@@ -262,7 +276,7 @@ http.createServer(async (req,res)=>{
       return json(res,200,{ok:true,updatedAt:result.rows[0].updated_at});
     }
     const requested=pathname==="/"?"index.html":decodeURIComponent(pathname).replace(/^\/+/, "");
-    const publicFiles=new Set(["index.html","privacy.html","style.css","script.js","atlas.js","clinical-utils.js","learning.js","advanced.js","clinical-records.js","bandage-x.svg","favicon.ico","manifest.json","robots.txt"]);
+    const publicFiles=new Set(["index.html","privacy.html","style.css","script.js","atlas.js","clinical-utils.js","learning.js","advanced.js","clinical-records.js","burns.js","bandage-x.svg","manifest.json","robots.txt"]);
     const publicAsset=/^assets\/[A-Za-z0-9._/-]+\.(svg|png|jpe?g|webp|woff2|ico)$/i.test(requested)&&!requested.split("/").includes("..");
     if(!publicFiles.has(requested)&&!publicAsset)return send(res,404,"text/plain; charset=utf-8","Not found");
     const file=path.resolve(root,requested);
@@ -274,7 +288,7 @@ http.createServer(async (req,res)=>{
     console.error("Erro na requisição:",err.message);
     if(!res.headersSent) json(res,500,{error:"Erro interno. Tente novamente."});
   }
-}).listen(port,()=>console.log("DermeQuest rodando na porta "+port));
+}).listen(port,()=>console.log("DermaTriz rodando na porta "+port));
 
 if(pool) initDatabase().catch(err=>{console.error("Falha ao inicializar banco:",err.message);dbReady=false;});
 process.on("SIGTERM",async()=>{if(pool)await pool.end();process.exit(0)});

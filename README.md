@@ -1,6 +1,6 @@
-# Feridas Enfermagem
+# DermaTriz
 
-Plataforma de estudos sobre avaliação e cuidado de feridas em enfermagem.
+Plataforma educacional e documental para avaliação de feridas e queimaduras.
 
 ## Conteúdo
 - Avaliação sistemática da ferida
