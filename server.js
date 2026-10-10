@@ -149,7 +149,7 @@ http.createServer(async (req,res)=>{
     console.error("Erro na requisição:",err.message);
     if(!res.headersSent) json(res,500,{error:"Erro interno. Tente novamente."});
   }
-}).listen(port,()=>console.log("Feridas Enfermagem rodando na porta "+port));
+}).listen(port,()=>console.log("DermeQuest rodando na porta "+port));
 
 if(pool) initDatabase().catch(err=>{console.error("Falha ao inicializar banco:",err.message);dbReady=false;});
 process.on("SIGTERM",async()=>{if(pool)await pool.end();process.exit(0)});
