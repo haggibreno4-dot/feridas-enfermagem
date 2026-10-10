@@ -143,3 +143,6 @@ button,.button,.nav-btn,.case-card,.panel,.stat,.home-action,.case-row{ -webkit-
 @media(max-width:1000px){.coverage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar nav{display:flex;overflow-x:auto;max-width:75vw}.app-header .nav-btn{flex-shrink:0}}
 @media(max-width:640px){.coverage-grid,.evolution-grid{grid-template-columns:1fr}.topbar nav{max-width:100%;width:100%;order:3}.topbar{flex-wrap:wrap;padding:10px 0}.app-header .nav-btn{font-size:11px;padding:8px}.flashcard-ratings .button{flex:1 1 42%}}
 @media(prefers-reduced-motion:reduce){.advanced-page *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+.coverage-matrix{display:grid;gap:12px}.coverage-matrix h2{margin:0}.coverage-matrix-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.coverage-matrix-controls label{display:grid;gap:7px;font-weight:750}.coverage-matrix-controls select{width:100%;border:1px solid var(--line);border-radius:10px;background:#fff;padding:11px 12px}.coverage-matrix-result{padding:14px;border-radius:12px;background:#f0f8f7;border:1px solid var(--line)}.coverage-matrix-result p{margin:7px 0 0;font-size:13px}
+@media(max-width:640px){.coverage-matrix-controls{grid-template-columns:1fr}}
