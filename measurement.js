@@ -36,6 +36,7 @@ function measureAddPoint(p){
  }else{pts.push(p);window.dqMeasurePoints=pts;window.dqMeasureClosed=false}
  measureDraw();measureRecalculate();
 }
+function measureSignature(src){src=String(src||"sample");return src.length+":"+src.slice(0,64)+":"+src.slice(Math.floor(src.length/2),Math.floor(src.length/2)+64)+":"+src.slice(-64)}
 function measureBind(){
  measureDraw();
  document.getElementById("woundMeasureCanvas")?.addEventListener("click",function(e){var r=this.getBoundingClientRect();measureAddPoint({x:(e.clientX-r.left)*this.width/r.width,y:(e.clientY-r.top)*this.height/r.height})});
@@ -52,8 +53,8 @@ function measureBind(){
   if(a==="reset"){window.dqMeasurePxPerCm=0;window.dqMeasureZoom=1;window.dqMeasureUndo=[];window.dqMeasureRedo=[];window.dqMeasurePoints=[];window.dqMeasureClosed=false;window.dqMeasureResult={line:null,area:null,box:null};measureMode="calibrate"}
   if(a==="finish"){if(measureMode==="polygon"&&pts.length>=3){window.dqMeasureClosed=true;measureRecalculate()}else{alert("Marque pelo menos três pontos para finalizar o contorno.")}}
   if(a==="add-center"){measureAddPoint({x:450+(pts.length*18),y:270+(pts.length*12)});return}
-  if(a==="save"){var data={mode:measureMode,calibrated:!!window.dqMeasurePxPerCm,pxPerCm:window.dqMeasurePxPerCm||null,points:pts,result:window.dqMeasureResult||{},savedAt:new Date().toISOString()};localStorage.setItem("dq-measure-last",JSON.stringify(data));if(window.DermeAdvanced)window.DermeAdvanced.persist();}
-  if(a==="restore"){var data;try{data=JSON.parse(localStorage.getItem("dq-measure-last")||"null")}catch(e){}if(data){measureMode=data.mode||"calibrate";window.dqMeasurePxPerCm=data.pxPerCm||0;window.dqMeasurePoints=data.points||[];window.dqMeasureResult=data.result||{};window.dqMeasureClosed=measureMode==="polygon"&&(window.dqMeasurePoints||[]).length>=3;renderContentOnly();return}}
+  if(a==="save"){var data={mode:measureMode,calibrated:!!window.dqMeasurePxPerCm,pxPerCm:window.dqMeasurePxPerCm||null,points:pts,result:window.dqMeasureResult||{},sourceType:window.dqMeasureSrc?"upload":"sample",sourceSignature:measureSignature(window.dqMeasureSrc||"sample"),savedAt:new Date().toISOString()};localStorage.setItem("dq-measure-last",JSON.stringify(data));if(window.DermeAdvanced)window.DermeAdvanced.persist();}
+  if(a==="restore"){var data;try{data=JSON.parse(localStorage.getItem("dq-measure-last")||"null")}catch(e){}if(data){if(data.sourceType==="upload"&&(!window.dqMeasureSrc||measureSignature(window.dqMeasureSrc)!==data.sourceSignature)){alert("Este resultado pertence a uma imagem enviada anteriormente. Carregue novamente a mesma imagem e depois selecione “Recuperar último resultado”.");return}measureMode=data.mode||"calibrate";window.dqMeasurePxPerCm=data.pxPerCm||0;window.dqMeasurePoints=data.points||[];window.dqMeasureResult=data.result||{};window.dqMeasureClosed=measureMode==="polygon"&&(window.dqMeasurePoints||[]).length>=3;renderContentOnly();return}}
   renderContentOnly();
  }});
 }
