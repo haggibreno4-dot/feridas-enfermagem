@@ -52,7 +52,7 @@ function measureBind(){
   if(a==="reset"){window.dqMeasurePxPerCm=0;window.dqMeasureZoom=1;window.dqMeasureUndo=[];window.dqMeasureRedo=[];window.dqMeasurePoints=[];window.dqMeasureClosed=false;window.dqMeasureResult={line:null,area:null,box:null};measureMode="calibrate"}
   if(a==="finish"){if(measureMode==="polygon"&&pts.length>=3){window.dqMeasureClosed=true;measureRecalculate()}else{alert("Marque pelo menos três pontos para finalizar o contorno.")}}
   if(a==="add-center"){measureAddPoint({x:450+(pts.length*18),y:270+(pts.length*12)});return}
-  if(a==="save"){var data={mode:measureMode,calibrated:!!window.dqMeasurePxPerCm,pxPerCm:window.dqMeasurePxPerCm||null,points:pts,result:window.dqMeasureResult||{},savedAt:new Date().toISOString()};localStorage.setItem("dq-measure-last",JSON.stringify(data));}
+  if(a==="save"){var data={mode:measureMode,calibrated:!!window.dqMeasurePxPerCm,pxPerCm:window.dqMeasurePxPerCm||null,points:pts,result:window.dqMeasureResult||{},savedAt:new Date().toISOString()};localStorage.setItem("dq-measure-last",JSON.stringify(data));if(window.DermeAdvanced)window.DermeAdvanced.persist();}
   if(a==="restore"){var data;try{data=JSON.parse(localStorage.getItem("dq-measure-last")||"null")}catch(e){}if(data){measureMode=data.mode||"calibrate";window.dqMeasurePxPerCm=data.pxPerCm||0;window.dqMeasurePoints=data.points||[];window.dqMeasureResult=data.result||{};window.dqMeasureClosed=measureMode==="polygon"&&(window.dqMeasurePoints||[]).length>=3;renderContentOnly();return}}
   renderContentOnly();
  }});
