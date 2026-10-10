@@ -1,0 +1,1 @@
+{"name":"feridas-enfermagem","version":"1.0.0","private":true,"description":"Plataforma de estudos sobre avaliação e cuidado de feridas em enfermagem.","scripts":{"start":"node server.js"},"engines":{"node":">=20"}}
