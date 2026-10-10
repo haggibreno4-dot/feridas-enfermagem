@@ -213,8 +213,8 @@ async function clinicalRoute(req,res,pathname){
  if(m&&method==="GET"){
   const p=await pool.query("SELECT * FROM patients WHERE id=$1 AND user_id=$2",[m[1],uid]);if(!p.rowCount){json(res,404,{error:"Paciente não encontrado."});return true}
   const exportQuery=new URL(req.url,"http://localhost").searchParams;let woundId=cleanText(exportQuery.get("woundId"),20)||null;const assessmentId=cleanText(exportQuery.get("assessmentId"),20)||null;
-  if(woundId&&!/^\\d+$/.test(woundId)){json(res,400,{error:"Identificador de ferida inválido."});return true}
-  if(assessmentId&&!/^\\d+$/.test(assessmentId)){json(res,400,{error:"Identificador de avaliação inválido."});return true}
+  if(woundId&&!/^\d+$/.test(woundId)){json(res,400,{error:"Identificador de ferida inválido."});return true}
+  if(assessmentId&&!/^\d+$/.test(assessmentId)){json(res,400,{error:"Identificador de avaliação inválido."});return true}
   if(assessmentId){const acheck=await pool.query("SELECT wound_id FROM wound_assessments WHERE id=$1 AND patient_id=$2 AND user_id=$3",[assessmentId,m[1],uid]);if(!acheck.rowCount){json(res,404,{error:"Avaliação não encontrada neste prontuário."});return true}if(woundId&&String(woundId)!==String(acheck.rows[0].wound_id)){json(res,400,{error:"A avaliação não pertence à ferida selecionada."});return true}woundId=String(acheck.rows[0].wound_id)}
   if(woundId){const wcheck=await pool.query("SELECT id FROM wounds WHERE id=$1 AND patient_id=$2 AND user_id=$3",[woundId,m[1],uid]);if(!wcheck.rowCount){json(res,404,{error:"Ferida não encontrada neste prontuário."});return true}}
   const wounds=await pool.query("SELECT * FROM wounds WHERE patient_id=$1 AND user_id=$2 AND ($3::bigint IS NULL OR id=$3) ORDER BY created_at",[m[1],uid,woundId]);const as=await pool.query("SELECT a.*,w.label AS wound_label,w.location,u.name AS professional_name FROM wound_assessments a JOIN wounds w ON w.id=a.wound_id AND w.user_id=$2 JOIN users u ON u.id=a.user_id WHERE a.patient_id=$1 AND a.user_id=$2 AND ($3::bigint IS NULL OR a.wound_id=$3) AND ($4::bigint IS NULL OR a.id=$4) ORDER BY a.assessed_at",[m[1],uid,woundId,assessmentId]);
